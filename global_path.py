@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import heapq
 from scipy import interpolate as interp
+import time
 
 # Size of a node in the graph
 node_size = 1
@@ -39,7 +40,6 @@ def get_interp(xs, ys):
     global full_len, tck
     tck = interp.splprep([xs, ys], s=0.5)[0]
     full_len = (sum(interp.splint(0, 1, tck, full_output=0))) * 2
-    print(full_len)
     return tck
 
 def get_dervs(x, acc=0.000001):
@@ -162,16 +162,16 @@ def plot(bike_pos, start_node, end_node, objects, xs, ys, cur_heading):
     plt.ylim(y_low, y_high)
     plt.quiver(bike_pos[0], bike_pos[1], np.cos(cur_heading), np.sin(cur_heading), color="red")
     plt.gca().set_aspect('equal', adjustable='box')
-    tck = get_interp(xs[1:], ys[1:])
-    u = np.linspace(0, 1, 25)
-    i = interp.splev(u, tck)
+    # tck = get_interp(xs, ys)
+    # u = np.linspace(0, 1, 25)
+    # i = interp.splev(u, tck)
     plt.plot(xs, ys, c="purple", label="Path")
-    plt.plot(i[0], i[1], c="pink", label="Path")
+    #plt.plot(i[0], i[1], c="pink", label="Path")
     #plt.plot(int_xs, int_ys, c="purple", label="Path")
-    #for i in u:
-        #x, y = interp.splev(i, tck)
-        #delta = get_delta(x, 4)
-        #plt.quiver(x, y, np.cos(delta), np.sin(delta), color="purple")
+    # for i in u:
+    #     x, y = interp.splev(i, tck)
+    #     delta = get_delta(x, 4)
+    #     plt.quiver(x, y, np.cos(delta), np.sin(delta), color="purple")
 
 
 def get_start_point(bike_pos, cur_heading):
@@ -277,8 +277,6 @@ def adjust_path_for_interp(xs, ys, cur_heading):
         new_xs.append(xs[i] - xs[0])
         new_ys.append(ys[i] - ys[0])
 
-    print(cur_heading)
-
     angle_mat = np.array([[np.cos(-cur_heading), -np.sin(-cur_heading)],[np.sin(-cur_heading), np.cos(-cur_heading)]])
 
     for i in range(len(xs)):
@@ -289,26 +287,22 @@ def adjust_path_for_interp(xs, ys, cur_heading):
 
 
 def find_closest_value_binary(values, target):
-    low = 0
-    high = len(values) - 1
-
-    while low <= high:
-        mid = (low + high) // 2
-        if values[mid] == target:
-            return mid
-        elif values[mid] < target:
-            low = mid + 1
-        else:
-            high = mid - 1
-
-    return low
+    start = time.time()
+    dist = 4
+    for val in values:
+        print(val, target)
+        dist = euc_dist(val, target)
+        if dist < 3:
+            return dist
+    end = time.time()
+    print("Time:", end - start)
+    return dist
 
 
 def calculate_distance_from_path(bike_pos):
     xs, ys = prev_path
-    ind = find_closest_value_binary(xs, bike_pos[0])
-    dist = euc_dist((xs[ind], ys[ind]), bike_pos)
-    return dist
+    print([(xs[i], ys[i]) for i in range(len(xs))])
+    return find_closest_value_binary([(xs[i], ys[i]) for i in range(len(xs))], bike_pos)
 
 
 def calculate_distance_from_end_node(bike_pos):
@@ -409,3 +403,29 @@ def create_path(objects, bike_pos, cur_heading, desired_heading):
 
         return int_xs, int_ys
     return [], []
+
+def get_obj_pos(obj, cur_heading, bike_pos):
+    x1, x2, y1, y2 = obj
+
+    nx1 = x1 * np.cos(cur_heading) - y1 * np.sin(cur_heading) + bike_pos[0]
+    ny1 = x1 * np.sin(cur_heading) + y1 * np.cos(cur_heading) + bike_pos[1]
+    nx2 = x2 * np.cos(cur_heading) - y2 * np.sin(cur_heading) + bike_pos[0]
+    ny2 = x2 * np.sin(cur_heading) + y2 * np.cos(cur_heading) + bike_pos[1]
+
+    return (nx1, nx2, ny1, ny2)
+
+# obj = [5, 5, -5, 5]
+# head = 5
+# bike_pos = [0, 0]
+#
+# plot(bike_pos, (0, 0), (10, 0), [obj], [], [], head)
+#
+# new_obj = get_obj_pos(obj, head, bike_pos)
+#
+# plot(bike_pos, (0, 0), (10, 0), [new_obj], [], [], head)
+
+# bike_pos = [6, 10]
+# head = 1
+# new_obj = get_obj_pos(obj, head, bike_pos)
+#
+# plot(bike_pos, bike_pos, (10, 0), [new_obj], [], [], head)

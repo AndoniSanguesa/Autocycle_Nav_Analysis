@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
-from global_path import plot
+from global_path import plot, find_closest_value_binary, euc_dist
 import pygame as pg
 import os
 import numpy as np
 import googlemaps
 from googlemaps.maps import *
 import datetime
+import time
 
 gmaps = googlemaps.Client(key='AIzaSyCtMBSCiR9NlYr_9mOXzVeTMwVI45aAnKs')
 
@@ -18,11 +19,17 @@ display = pg.display.set_mode((display_width, display_height))
 slider_pos = 0
 slider_currently_pressed = False
 
+is_play = False
+
 current_page = "home"
 gmaps_map_created = False
 
 time_text = "0:0:0"
 
+def calculate_distance_from_path(data):
+    objects, path, des_head, bike_pos, tel_data = data
+    ys, xs = zip(*path)
+    return find_closest_value_binary([(xs[i], ys[i]) for i in range(len(xs))], bike_pos)
 
 def get_reduced_path(bike_positions):
     new_bike_positions = []
@@ -42,19 +49,16 @@ def get_google_maps_plot(data):
         objects, path, des_head, bike_pos, tel_data = data[key]
         bike_positions.append((tel_data[9], tel_data[10]))
 
-    print(bike_positions)
 
     bike_positions = get_reduced_path(bike_positions)
-    print(bike_positions)
     path = StaticMapPath(bike_positions)
     start_marker = StaticMapMarker(bike_positions[0], color="green", label="S")
     end_marker = StaticMapMarker(bike_positions[-1], color="red", label="E")
     markers = [start_marker, end_marker]
     for pos in bike_positions:
         markers.append(StaticMapMarker(pos, "tiny", color="blue"))
-        print(pos)
     center = [bike_positions[0][0], bike_positions[0][1]]
-    zoom = 20
+    zoom = 22
     res = static_map(gmaps, (800, 600), path=path, center=center, zoom=zoom, markers=markers, format='png', maptype="satellite")
     with open('images/map.png', 'wb') as f:
         for i in res:
@@ -116,6 +120,24 @@ def create_ui():
 
     fast_forward = fast_forward_1.union(fast_forward_2)
 
+    # play button
+    play = pg.draw.polygon(display, (50, 255, 50), [(620, 120),
+                                                (640, 100),
+                                                (620, 80)])
+
+    # play button outline
+    pg.draw.polygon(display, (0, 0, 0), [(620, 120),
+                                             (640, 100),
+                                             (620, 80)], 3)
+
+    # pause button
+    pause_part_1 = pg.draw.rect(display, (255, 50, 50), (660, 80, 10, 40))
+    pause_part_2 = pg.draw.rect(display, (255, 50, 50), (680, 80, 10, 40))
+    pg.draw.rect(display, (0, 0, 0), (660, 80, 10, 40), 3)
+    pg.draw.rect(display, (0, 0, 0), (680, 80, 10, 40), 3)
+
+    pause = pause_part_1.union(pause_part_2)
+
     # Slide bar
     pg.draw.line(display, (0, 0, 0), (210, 30), (610, 30), 3)
 
@@ -139,8 +161,8 @@ def create_ui():
     text_rect = text.get_rect()
     text_rect.center = (530, 135)
     display.blit(text, text_rect)
-
-    return fast_back, back, forward, fast_forward, slider, map_button, path_button
+    
+    return fast_back, back, forward, fast_forward, slider, map_button, path_button, play, pause
 
 
 def display_data(data):
@@ -167,7 +189,7 @@ def save_plot(data):
 
     for i in range(len(objects)):
         objects[i] = list(map(lambda x: x/1000, objects[i]))
-    start_node = (xs[0], ys[0])
+    start_node = (xs[1], ys[1])
     end_node = (xs[-1], ys[-1])
     plot(bike_pos, start_node, end_node, objects, xs, ys, tel_data[7])
     plt.savefig("images/tmp.png", dpi=300)
@@ -185,7 +207,6 @@ def parse_data(data_file):
                 objects = eval(line)
             elif parity == 2:
                 path = eval(line)
-                print(path)
             elif parity == 3:
                 des_head = float(line)
             elif parity == 4:
@@ -238,15 +259,16 @@ def update_time_text(start, end):
     time_text = f"{minutes}:{seconds}:{microseconds}"
 
 def main():
-    global slider_pos, slider_currently_pressed, current_page, gmaps_map_created, time_text
+    global is_play, slider_pos, slider_currently_pressed, current_page, gmaps_map_created, time_text
     done = False
     
     #data_file = input("Enter data file name: ")
-    data_file = "data/2022-2-18/17-2-10.txt"
+    data_file = "data/2022-3-6/13-19-7.txt"
     data = parse_data(data_file)
     times = list(data.keys())
     cur_data_index = 0
     save_plot(data[times[cur_data_index]])
+    new_time = time.time()
 
     clock = pg.time.Clock()
 
@@ -257,7 +279,7 @@ def main():
 
         if current_page == "home":
             display_data(data[times[cur_data_index]])
-            fast_back, back, forward, fast_forward, slider, map_button, path_button = create_ui()
+            fast_back, back, forward, fast_forward, slider, map_button, path_button, play, pause = create_ui()
 
         # checks if mouse down
         if slider_currently_pressed:
@@ -273,6 +295,16 @@ def main():
                 slider_pos = slider_x - 210
                 cur_data_index = int((slider_x - 210) / (610 - 210) * (len(data) - 1))
 
+        if is_play and time.time() - new_time > 0.1:
+            if cur_data_index < len(data) - 1:
+                new_time = time.time()
+                save_plot(data[times[cur_data_index]])
+                slider_pos = int((cur_data_index / (len(data) - 1)) * 400)
+                update_time_text(times[cur_data_index - 1], times[cur_data_index])
+                cur_data_index += min(len(data) - cur_data_index - 1, 3)
+            else:
+                is_play = False
+
         if event == pg.QUIT:
             done = True
         elif event == pg.MOUSEBUTTONDOWN and current_page == "home":
@@ -284,17 +316,19 @@ def main():
                 cur_data_index = max(cur_data_index - 1, 0)
                 save_plot(data[times[cur_data_index]])
                 slider_pos = int((cur_data_index / (len(data) - 1)) * 400)
+                print(times[cur_data_index], calculate_distance_from_path(data[times[cur_data_index]]))
             elif forward.collidepoint(pg.mouse.get_pos()):
                 cur_data_index = min(cur_data_index + 1, len(data) - 1)
-                print(cur_data_index)
                 save_plot(data[times[cur_data_index]])
                 slider_pos = int((cur_data_index / (len(data) - 1)) * 400)
+                print(times[cur_data_index], calculate_distance_from_path(data[times[cur_data_index]]))
             elif fast_forward.collidepoint(pg.mouse.get_pos()):
                 cur_data_index = len(data) - 1
                 save_plot(data[times[cur_data_index]])
                 slider_pos = 400
             elif slider.collidepoint(pg.mouse.get_pos()):
                 slider_currently_pressed = True
+                is_play = False
             elif map_button.collidepoint(pg.mouse.get_pos()):
                 if not gmaps_map_created:
                     get_google_maps_plot(data)
@@ -303,6 +337,10 @@ def main():
             elif path_button.collidepoint(pg.mouse.get_pos()):
                 get_path_plot(data)
                 current_page = "path"
+            elif play.collidepoint(pg.mouse.get_pos()):
+                is_play = True
+            elif pause.collidepoint(pg.mouse.get_pos()):
+                is_play = False
         elif event == pg.MOUSEBUTTONUP and slider_currently_pressed:
             slider_currently_pressed = False
             save_plot(data[times[cur_data_index]])
